@@ -1,20 +1,21 @@
-A FastAGI parallel benchmark in Go
+### A FastAGI parallel benchmark in Go
+---
 
 Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf.000@gmail.com>
 
-Usage flags:
+#### Usage flags:
 
-  -arg="": Argument to pass to the FastAGI server
-  -cid="Unknown": Caller ID
-  -debug=false: Write detailed statistics output to csv file
-  -delay=100: Delay in AGI responses to the server (milliseconds)
-  -ext="100": Called extension
-  -host="127.0.0.1": FAstAGI server host
-  -port="4573": FastAGI server port
-  -req="myagi?file=echo-test": AGI request
-  -runs=1: Number of runs per second
-  -sess=1: Sessions per run
+- runs  : Number of runs per second. Default: 1
+- sess  : Sessions per run. Default: 1
+- host  : FAstAGI server host. Default: 127.0.0.1
+- port  : FastAGI server port. Default: 4573
+- req   : AGI request. Default: "myagi?file=echo-test"
+- arg   : Argument to pass to the FastAGI server.
+- cid   : Caller ID. Default: "Unknown"
+- debug : Write detailed statistics output to csv file. Default: off
+- delay : Delay in AGI responses to the server (milliseconds). Default: 100
+- ext   : Called extension. Default: 100
 
 This program is free software, distributed under the terms of
-the GNU General Public License Version 2. See the LICENSE file
+the GNU General Public License Version 3. See the LICENSE file
 at the top of the source tree.
