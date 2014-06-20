@@ -26,7 +26,7 @@ import (
 
 //benchmark parameters and default values
 var (
-	shutdown = false
+	shutdown int32
 	file     *os.File
 	writer   *bufio.Writer
 	debug    = flag.Bool("debug", false, "Write detailed statistics output to csv file")
@@ -67,7 +67,7 @@ func main() {
 	//Start benchmark and wait for users input to stop
 	go agiBench(wg)
 	bufio.NewReader(os.Stdin).ReadString('\n')
-	shutdown = true
+	atomic.StoreInt32(&shutdown, 1)
 	wg.Wait()
 	if *debug {
 		writer.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
@@ -91,7 +91,7 @@ func agiBench(wg *sync.WaitGroup) {
 		go func(ticker <-chan time.Time) {
 			defer wg1.Done()
 			wg2 := new(sync.WaitGroup)
-			for !shutdown {
+			for atomic.LoadInt32(&shutdown) == 0 {
 				<-ticker
 				wg2.Add(1)
 				//Spawn Connections to the AGI server
@@ -151,7 +151,7 @@ func agiBench(wg *sync.WaitGroup) {
 		var sessions int64
 		for dur := range timeChan {
 			sessions++
-			avrDur = (avrDur*(sessions-1) + dur) / sessions
+			atomic.StoreInt64(&avrDur, (atomic.LoadInt64(&avrDur)*(sessions-1)+dur)/sessions)
 			if sessions >= 10000 {
 				sessions = 0
 			}
@@ -172,7 +172,7 @@ func agiBench(wg *sync.WaitGroup) {
 				"\nCompleted:", atomic.LoadInt64(&count),
 				"\nDuration:", atomic.LoadInt64(&avrDur), "ns (last 10000 sessions average)",
 				"\nFailed:", atomic.LoadInt64(&fail))
-			if shutdown {
+			if atomic.LoadInt32(&shutdown) != 0 {
 				fmt.Println("Stopping...")
 				if atomic.LoadInt64(&active) == 0 {
 					break
