@@ -191,7 +191,7 @@ func agiBench(wg *sync.WaitGroup) {
 
 func agiInit() []byte {
 	//Generate AGI initialisation data
-	var agiData []byte
+	agiData := make([]byte, 0, 512)
 	agiData = append(agiData, "agi_network: yes\n"...)
 	if len(*req) > 0 {
 		agiData = append(agiData, "agi_network_script: "+*req+"\n"...)
