@@ -115,6 +115,7 @@ func agiBench(wg *sync.WaitGroup) {
 						time.Sleep(replyDelay)
 						conn.Write([]byte("200 result=0\n"))
 						if scanner.Text() == "HANGUP" {
+							conn.Write([]byte("200 result=0\nHANGUP\n"))
 							break
 						}
 					}
@@ -203,7 +204,7 @@ func agiInit() []byte {
 	agiData = append(agiData, "agi_language: en\n"...)
 	agiData = append(agiData, "agi_type: SIP\n"...)
 	agiData = append(agiData, "agi_uniqueid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
-	agiData = append(agiData, "agi_version: 0.1\n"...)
+	agiData = append(agiData, "agi_version: 10.1.1.0\n"...)
 	agiData = append(agiData, "agi_callerid: "+*cid+"\n"...)
 	agiData = append(agiData, "agi_calleridname: "+*cid+"\n"...)
 	agiData = append(agiData, "agi_callingpres: 67\n"...)
