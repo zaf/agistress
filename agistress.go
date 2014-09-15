@@ -130,7 +130,7 @@ func agiBench(wg *sync.WaitGroup) {
 	wg2.Wait()
 }
 
-// Connect to AGI server and eend AGI data
+// Connect to the AGI server and send AGI data
 func session(ticker <-chan time.Time, b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	wg1 := new(sync.WaitGroup)
@@ -245,7 +245,7 @@ func benchInit() *Bench {
 		// Parse config file
 		file, err := os.Open(*conf)
 		if err != nil {
-			log.Println("Failed to open config file, usin default settings:", err)
+			log.Println("Failed to open config file, using default settings:", err)
 		} else {
 			decoder := json.NewDecoder(file)
 			err = decoder.Decode(&confData)
@@ -263,11 +263,12 @@ func benchInit() *Bench {
 func agiInit(env []string) []byte {
 	agiData := make([]byte, 0, 512)
 	if env != nil {
+		// Env from config
 		for _, par := range env {
 			agiData = append(agiData, par+"\n"...)
 		}
-		agiData = append(agiData, "\n"...)
 	} else {
+		// Default Env data
 		agiData = append(agiData, "agi_network: yes\n"...)
 		if len(*req) > 0 {
 			agiData = append(agiData, "agi_network_script: "+*req+"\n"...)
@@ -295,10 +296,9 @@ func agiInit(env []string) []byte {
 		agiData = append(agiData, "agi_accountcode: \n"...)
 		agiData = append(agiData, "agi_threadid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
 		if len(*arg) > 0 {
-			agiData = append(agiData, "agi_arg_1: "+*arg+"\n\n"...)
-		} else {
-			agiData = append(agiData, "\n"...)
+			agiData = append(agiData, "agi_arg_1: "+*arg+"\n"...)
 		}
 	}
+	agiData = append(agiData, "\n"...)
 	return agiData
 }
