@@ -26,7 +26,6 @@ import (
 	"time"
 )
 
-// Benchmark parameters and default values
 var (
 	shutdown int32
 	file     *os.File
@@ -55,11 +54,19 @@ type Bench struct {
 	RunDelay   time.Duration
 	ReplyDelay time.Duration
 	Env        []byte
+	Payload    []AgiMsg
+}
+
+// AGI Playload data
+type AgiMsg struct {
+	Msg   string
+	Delay int
 }
 
 // Configuration data
 type Config struct {
-	AGIEnv []string
+	AgiEnv     []string
+	AgiPayload []AgiMsg
 }
 
 func main() {
@@ -94,6 +101,7 @@ func main() {
 	}
 }
 
+// Run benchmark and gather data
 func agiBench(wg *sync.WaitGroup) {
 	defer wg.Done()
 	b := benchInit()
@@ -122,7 +130,7 @@ func agiBench(wg *sync.WaitGroup) {
 	wg2.Wait()
 }
 
-//
+// Connect to AGI server and eend AGI data
 func session(ticker <-chan time.Time, b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	wg1 := new(sync.WaitGroup)
@@ -145,13 +153,24 @@ func session(ticker <-chan time.Time, b *Bench, wg *sync.WaitGroup) {
 			scanner := bufio.NewScanner(conn)
 			// Send AGI initialisation data
 			conn.Write(b.Env)
-			// Reply with '200' to all messages from the AGI server until it hangs up
-			for scanner.Scan() {
-				time.Sleep(b.ReplyDelay)
-				conn.Write([]byte("200 result=0\n"))
-				if scanner.Text() == "HANGUP" {
-					conn.Write([]byte("200 result=0\nHANGUP\n"))
-					break
+			if b.Payload == nil {
+				// Reply with '200' to all messages from the AGI server until it hangs up
+				for scanner.Scan() {
+					time.Sleep(b.ReplyDelay)
+					conn.Write([]byte("200 result=0\n"))
+					if scanner.Text() == "HANGUP" {
+						conn.Write([]byte("HANGUP\n"))
+						break
+					}
+				}
+			} else {
+				// Use the AGI Payload from loaded config file
+				for _, pld := range b.Payload {
+					if !scanner.Scan() {
+						break
+					}
+					time.Sleep(time.Duration(pld.Delay) * time.Millisecond)
+					conn.Write([]byte(pld.Msg + "\n"))
 				}
 			}
 			conn.Close()
@@ -216,71 +235,70 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 
 // Initialize benchmark session
 func benchInit() *Bench {
+	var confData Config
 	b := new(Bench)
 	b.LogChan = make(chan string, *sess*2)
 	b.TimeChan = make(chan int64, *sess*2)
 	b.RunDelay = time.Duration(1e9 / *runs) * time.Nanosecond
 	b.ReplyDelay = time.Duration(*delay) * time.Millisecond
-	b.Env = agiInit()
-	return b
-}
-
-// Generate AGI initialisation data
-func agiInit() []byte {
-	agiData := make([]byte, 0, 512)
 	if *conf != "" {
 		// Parse config file
 		file, err := os.Open(*conf)
 		if err != nil {
-			log.Println("Failed to open config file:", err, "\nUsing default settings")
-			goto DEF
+			log.Println("Failed to open config file, usin default settings:", err)
+		} else {
+			decoder := json.NewDecoder(file)
+			err = decoder.Decode(&confData)
+			if err != nil {
+				log.Println("Failed to parse config file, using default settings:", err)
+			}
 		}
-		var confData Config
-		decoder := json.NewDecoder(file)
-		err = decoder.Decode(&confData)
-		if err != nil {
-			log.Println("Failed to parse config file:", err, "\nUsing default settings")
-			goto DEF
-		}
-		for _, par := range confData.AGIEnv {
+	}
+	b.Env = agiInit(confData.AgiEnv)
+	b.Payload = confData.AgiPayload
+	return b
+}
+
+// Generate AGI Environment data
+func agiInit(env []string) []byte {
+	agiData := make([]byte, 0, 512)
+	if env != nil {
+		for _, par := range env {
 			agiData = append(agiData, par+"\n"...)
 		}
 		agiData = append(agiData, "\n"...)
-		return agiData
-	}
-
-	//Deafult AGI environment settings
-DEF:
-	agiData = append(agiData, "agi_network: yes\n"...)
-	if len(*req) > 0 {
-		agiData = append(agiData, "agi_network_script: "+*req+"\n"...)
-		agiData = append(agiData, "agi_request: agi://"+*host+"/"+*req+"\n"...)
 	} else {
-		agiData = append(agiData, "agi_request: agi://"+*host+"\n"...)
-	}
-	agiData = append(agiData, "agi_channel: SIP/1234-00000000\n"...)
-	agiData = append(agiData, "agi_language: en\n"...)
-	agiData = append(agiData, "agi_type: SIP\n"...)
-	agiData = append(agiData, "agi_uniqueid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
-	agiData = append(agiData, "agi_version: 10.1.1.0\n"...)
-	agiData = append(agiData, "agi_callerid: "+*cid+"\n"...)
-	agiData = append(agiData, "agi_calleridname: "+*cid+"\n"...)
-	agiData = append(agiData, "agi_callingpres: 67\n"...)
-	agiData = append(agiData, "agi_callingani2: 0\n"...)
-	agiData = append(agiData, "agi_callington: 0\n"...)
-	agiData = append(agiData, "agi_callingtns: 0\n"...)
-	agiData = append(agiData, "agi_dnid: "+*ext+"\n"...)
-	agiData = append(agiData, "agi_rdnis: unknown\n"...)
-	agiData = append(agiData, "agi_context: default\n"...)
-	agiData = append(agiData, "agi_extension: "+*ext+"\n"...)
-	agiData = append(agiData, "agi_priority: 1\n"...)
-	agiData = append(agiData, "agi_enhanced: 0.0\n"...)
-	agiData = append(agiData, "agi_accountcode: \n"...)
-	agiData = append(agiData, "agi_threadid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
-	if len(*arg) > 0 {
-		agiData = append(agiData, "agi_arg_1: "+*arg+"\n\n"...)
-	} else {
-		agiData = append(agiData, "\n"...)
+		agiData = append(agiData, "agi_network: yes\n"...)
+		if len(*req) > 0 {
+			agiData = append(agiData, "agi_network_script: "+*req+"\n"...)
+			agiData = append(agiData, "agi_request: agi://"+*host+"/"+*req+"\n"...)
+		} else {
+			agiData = append(agiData, "agi_request: agi://"+*host+"\n"...)
+		}
+		agiData = append(agiData, "agi_channel: SIP/1234-00000000\n"...)
+		agiData = append(agiData, "agi_language: en\n"...)
+		agiData = append(agiData, "agi_type: SIP\n"...)
+		agiData = append(agiData, "agi_uniqueid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
+		agiData = append(agiData, "agi_version: 10.1.1.0\n"...)
+		agiData = append(agiData, "agi_callerid: "+*cid+"\n"...)
+		agiData = append(agiData, "agi_calleridname: "+*cid+"\n"...)
+		agiData = append(agiData, "agi_callingpres: 67\n"...)
+		agiData = append(agiData, "agi_callingani2: 0\n"...)
+		agiData = append(agiData, "agi_callington: 0\n"...)
+		agiData = append(agiData, "agi_callingtns: 0\n"...)
+		agiData = append(agiData, "agi_dnid: "+*ext+"\n"...)
+		agiData = append(agiData, "agi_rdnis: unknown\n"...)
+		agiData = append(agiData, "agi_context: default\n"...)
+		agiData = append(agiData, "agi_extension: "+*ext+"\n"...)
+		agiData = append(agiData, "agi_priority: 1\n"...)
+		agiData = append(agiData, "agi_enhanced: 0.0\n"...)
+		agiData = append(agiData, "agi_accountcode: \n"...)
+		agiData = append(agiData, "agi_threadid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
+		if len(*arg) > 0 {
+			agiData = append(agiData, "agi_arg_1: "+*arg+"\n\n"...)
+		} else {
+			agiData = append(agiData, "\n"...)
+		}
 	}
 	return agiData
 }
