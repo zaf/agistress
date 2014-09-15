@@ -5,6 +5,7 @@ Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf.000@gmail.com>
 
 #### Usage flags:
 
+- conf  : Configuration file with the AGI playload in JSON format
 - runs  : Number of runs per second. Default: 1
 - sess  : Sessions per run. Default: 1
 - host  : FAstAGI server host. Default: 127.0.0.1
