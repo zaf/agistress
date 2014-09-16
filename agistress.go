@@ -16,7 +16,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -89,7 +88,6 @@ func main() {
 		writer.WriteString(fmt.Sprintf("#Sessions: %v\n#Delay: %v\n#Reguest: %v\n", *sess, *delay, *req))
 		writer.WriteString("#completed,active,duration\n")
 	}
-	rand.Seed(time.Now().UTC().UnixNano())
 	wgMain := new(sync.WaitGroup)
 	wgMain.Add(1)
 	b := benchInit()
@@ -190,17 +188,21 @@ func agiConnection(b *Bench, wg *sync.WaitGroup) {
 	if b.Payload == nil {
 		// Reply with '200' to all messages from the AGI server until it hangs up
 		for scanner.Scan() {
-			time.Sleep(b.ReplyDelay)
-			conn.Write([]byte("200 result=0\n"))
 			if scanner.Text() == "HANGUP" {
-				conn.Write([]byte("HANGUP\n"))
+				conn.Write([]byte("200 result=1\n"))
 				break
 			}
+			time.Sleep(b.ReplyDelay)
+			conn.Write([]byte("200 result=0\nHANGUP\n"))
 		}
 	} else {
 		// Use the AGI Payload from loaded config file
 		for _, pld := range b.Payload {
 			if !scanner.Scan() {
+				break
+			}
+			if scanner.Text() == "HANGUP" {
+				conn.Write([]byte("200 result=1\nHANGUP\n"))
 				break
 			}
 			time.Sleep(time.Duration(pld.Delay) * time.Millisecond)
@@ -265,44 +267,43 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 
 // Generate AGI Environment data
 func agiInit(env []string) []byte {
-	agiData := make([]byte, 0, 512)
+	var envData string
 	if env != nil {
-		// Env from config
+		// Env from config file
 		for _, par := range env {
-			agiData = append(agiData, par+"\n"...)
+			envData += fmt.Sprintln(par)
 		}
 	} else {
-		// Default Env data
-		agiData = append(agiData, "agi_network: yes\n"...)
+		// Default Env data with cli parameters
+		envData = fmt.Sprintln("agi_network: yes")
 		if len(*req) > 0 {
-			agiData = append(agiData, "agi_network_script: "+*req+"\n"...)
-			agiData = append(agiData, "agi_request: agi://"+*host+"/"+*req+"\n"...)
+			envData += fmt.Sprintln("agi_network_script: " + *req)
+			envData += fmt.Sprintln("agi_request: agi://" + *host + "/" + *req)
 		} else {
-			agiData = append(agiData, "agi_request: agi://"+*host+"\n"...)
+			envData += fmt.Sprintln("agi_request: agi://" + *host)
 		}
-		agiData = append(agiData, "agi_channel: SIP/1234-00000000\n"...)
-		agiData = append(agiData, "agi_language: en\n"...)
-		agiData = append(agiData, "agi_type: SIP\n"...)
-		agiData = append(agiData, "agi_uniqueid: 1410638774.0\n"...)
-		agiData = append(agiData, "agi_version: 10.1.1.0\n"...)
-		agiData = append(agiData, "agi_callerid: "+*cid+"\n"...)
-		agiData = append(agiData, "agi_calleridname: "+*cid+"\n"...)
-		agiData = append(agiData, "agi_callingpres: 67\n"...)
-		agiData = append(agiData, "agi_callingani2: 0\n"...)
-		agiData = append(agiData, "agi_callington: 0\n"...)
-		agiData = append(agiData, "agi_callingtns: 0\n"...)
-		agiData = append(agiData, "agi_dnid: "+*ext+"\n"...)
-		agiData = append(agiData, "agi_rdnis: unknown\n"...)
-		agiData = append(agiData, "agi_context: default\n"...)
-		agiData = append(agiData, "agi_extension: "+*ext+"\n"...)
-		agiData = append(agiData, "agi_priority: 1\n"...)
-		agiData = append(agiData, "agi_enhanced: 0.0\n"...)
-		agiData = append(agiData, "agi_accountcode: \n"...)
-		agiData = append(agiData, "agi_threadid: -1281018784\n"...)
+		envData += fmt.Sprintln("agi_channel: SIP/1234-00000000")
+		envData += fmt.Sprintln("agi_language: en")
+		envData += fmt.Sprintln("agi_type: SIP")
+		envData += fmt.Sprintln("agi_uniqueid: 1410638774.0")
+		envData += fmt.Sprintln("agi_version: 10.1.1.0")
+		envData += fmt.Sprintln("agi_callerid: " + *cid)
+		envData += fmt.Sprintln("agi_calleridname: " + *cid)
+		envData += fmt.Sprintln("agi_callingpres: 67")
+		envData += fmt.Sprintln("agi_callingani2: 0")
+		envData += fmt.Sprintln("agi_callington: 0")
+		envData += fmt.Sprintln("agi_callingtns: 0")
+		envData += fmt.Sprintln("agi_dnid: " + *ext)
+		envData += fmt.Sprintln("agi_rdnis: unknown")
+		envData += fmt.Sprintln("agi_context: default")
+		envData += fmt.Sprintln("agi_extension: " + *ext)
+		envData += fmt.Sprintln("agi_priority: 1")
+		envData += fmt.Sprintln("agi_enhanced: 0.0")
+		envData += fmt.Sprintln("agi_accountcode: ")
+		envData += fmt.Sprintln("agi_threadid: -1281018784")
 		if len(*arg) > 0 {
-			agiData = append(agiData, "agi_arg_1: "+*arg+"\n"...)
+			envData += fmt.Sprintln("agi_arg_1: " + *arg)
 		}
 	}
-	agiData = append(agiData, "\n"...)
-	return agiData
+	return []byte(envData + "\n")
 }
