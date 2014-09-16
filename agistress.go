@@ -80,6 +80,7 @@ func main() {
 		}
 		writer = bufio.NewWriter(file)
 		defer func() {
+			writer.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
 			writer.Flush()
 			file.Close()
 		}()
@@ -101,9 +102,6 @@ func main() {
 		atomic.StoreInt32(&shutdown, 1)
 	}
 	wgMain.Wait()
-	if *debug {
-		writer.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
-	}
 }
 
 // Initialize benchmark session
