@@ -189,11 +189,11 @@ func agiConnection(b *Bench, wg *sync.WaitGroup) {
 		// Reply with '200' to all messages from the AGI server until it hangs up
 		for scanner.Scan() {
 			if scanner.Text() == "HANGUP" {
-				conn.Write([]byte("200 result=1\n"))
+				conn.Write([]byte("200 result=1\nHANGUP\n"))
 				break
 			}
 			time.Sleep(b.ReplyDelay)
-			conn.Write([]byte("200 result=0\nHANGUP\n"))
+			conn.Write([]byte("200 result=0\n"))
 		}
 	} else {
 		// Use the AGI Payload from loaded config file
