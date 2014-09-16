@@ -31,12 +31,13 @@ var (
 	file     *os.File
 	writer   *bufio.Writer
 	conf     = flag.String("conf", "", "Configuration file")
+	single   = flag.Bool("single", false, "Connect and run only once")
 	debug    = flag.Bool("debug", false, "Write detailed statistics output to csv file")
 	host     = flag.String("host", "127.0.0.1", "FAstAGI server host")
 	port     = flag.String("port", "4573", "FastAGI server port")
 	runs     = flag.Float64("runs", 1, "Number of runs per second")
 	sess     = flag.Int("sess", 1, "Sessions per run")
-	delay    = flag.Int("delay", 100, "Delay in AGI responses to the server (milliseconds)")
+	delay    = flag.Int("delay", 50, "Delay in AGI responses to the server (milliseconds)")
 	req      = flag.String("req", "myagi?file=echo-test", "AGI request")
 	arg      = flag.String("arg", "", "Argument to pass to the FastAGI server")
 	cid      = flag.String("cid", "Unknown", "Caller ID")
@@ -89,103 +90,132 @@ func main() {
 		writer.WriteString("#completed,active,duration\n")
 	}
 	rand.Seed(time.Now().UTC().UnixNano())
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	// Start benchmark and wait for users input to stop
-	go agiBench(wg)
-	bufio.NewReader(os.Stdin).ReadString('\n')
-	atomic.StoreInt32(&shutdown, 1)
-	wg.Wait()
+	wgMain := new(sync.WaitGroup)
+	wgMain.Add(1)
+	b := benchInit()
+	if *single {
+		// Run once
+		go agiConnection(b, wgMain)
+	} else {
+		// Start benchmark and wait for users input to stop
+		go agiBench(b, wgMain)
+		bufio.NewReader(os.Stdin).ReadString('\n')
+		atomic.StoreInt32(&shutdown, 1)
+	}
+	wgMain.Wait()
 	if *debug {
 		writer.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
 	}
 }
 
+// Initialize benchmark session
+func benchInit() *Bench {
+	var confData Config
+	b := new(Bench)
+	b.LogChan = make(chan string, *sess*2)
+	b.TimeChan = make(chan int64, *sess*2)
+	b.RunDelay = time.Duration(1e9 / *runs) * time.Nanosecond
+	b.ReplyDelay = time.Duration(*delay) * time.Millisecond
+	if *conf != "" {
+		// Parse config file
+		file, err := os.Open(*conf)
+		if err != nil {
+			log.Println("Failed to open config file, using default settings:", err)
+		} else {
+			decoder := json.NewDecoder(file)
+			err = decoder.Decode(&confData)
+			if err != nil {
+				log.Println("Failed to parse config file, using default settings:", err)
+			}
+		}
+	}
+	b.Env = agiInit(confData.AgiEnv)
+	b.Payload = confData.AgiPayload
+	return b
+}
+
 // Run benchmark and gather data
-func agiBench(wg *sync.WaitGroup) {
+func agiBench(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
-	b := benchInit()
-	wg1 := new(sync.WaitGroup)
-	wg1.Add(*sess)
+	wgBench := new(sync.WaitGroup)
+	wgBench.Add(*sess)
 	// Spawn pool of paraller runs
 	for i := 0; i < *sess; i++ {
 		ticker := time.Tick(b.RunDelay)
-		go session(ticker, b, wg1)
+		go func() {
+			defer wgBench.Done()
+			wgConn := new(sync.WaitGroup)
+			for atomic.LoadInt32(&shutdown) == 0 {
+				<-ticker
+				wgConn.Add(1)
+				go agiConnection(b, wgConn)
+			}
+			wgConn.Wait()
+		}()
 	}
-	wg2 := new(sync.WaitGroup)
+	wgMon := new(sync.WaitGroup)
 	// Write to log file
 	if *debug {
-		wg2.Add(1)
-		go logger(b, wg2)
+		wgMon.Add(1)
+		go logger(b, wgMon)
 	}
 	// Calculate session duration and display some output on the console
-	wg2.Add(2)
-	go calcAvrg(b, wg2)
-	go consoleOutput(b, wg2)
+	wgMon.Add(2)
+	go calcAvrg(b, wgMon)
+	go consoleOutput(b, wgMon)
 	// Wait all FastAGI sessions to end
-	wg1.Wait()
+	wgBench.Wait()
 	close(b.LogChan)
 	close(b.TimeChan)
 	// Wait logger and console output to finish
-	wg2.Wait()
+	wgMon.Wait()
 }
 
-// Connect to the AGI server and send AGI data
-func session(ticker <-chan time.Time, b *Bench, wg *sync.WaitGroup) {
+// Connect to the AGI server and send AGI payload
+func agiConnection(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
-	wg1 := new(sync.WaitGroup)
-	for atomic.LoadInt32(&shutdown) == 0 {
-		<-ticker
-		wg1.Add(1)
-		// Spawn Connections to the AGI server
-		go func() {
-			defer wg1.Done()
-			start := time.Now()
-			conn, err := net.Dial("tcp", net.JoinHostPort(*host, *port))
-			if err != nil {
-				atomic.AddInt64(&b.Fail, 1)
-				if *debug {
-					b.LogChan <- fmt.Sprintf("# %s\n", err)
-				}
-				return
-			}
-			atomic.AddInt64(&b.Active, 1)
-			scanner := bufio.NewScanner(conn)
-			// Send AGI initialisation data
-			conn.Write(b.Env)
-			if b.Payload == nil {
-				// Reply with '200' to all messages from the AGI server until it hangs up
-				for scanner.Scan() {
-					time.Sleep(b.ReplyDelay)
-					conn.Write([]byte("200 result=0\n"))
-					if scanner.Text() == "HANGUP" {
-						conn.Write([]byte("HANGUP\n"))
-						break
-					}
-				}
-			} else {
-				// Use the AGI Payload from loaded config file
-				for _, pld := range b.Payload {
-					if !scanner.Scan() {
-						break
-					}
-					time.Sleep(time.Duration(pld.Delay) * time.Millisecond)
-					conn.Write([]byte(pld.Msg + "\n"))
-				}
-			}
-			conn.Close()
-			elapsed := time.Since(start)
-			b.TimeChan <- elapsed.Nanoseconds()
-			atomic.AddInt64(&b.Active, -1)
-			atomic.AddInt64(&b.Count, 1)
-			if *debug {
-				b.LogChan <- fmt.Sprintf("%d,%d,%d\n", atomic.LoadInt64(&b.Count),
-					atomic.LoadInt64(&b.Active), elapsed.Nanoseconds())
-			}
-		}()
-
+	start := time.Now()
+	conn, err := net.Dial("tcp", net.JoinHostPort(*host, *port))
+	if err != nil {
+		atomic.AddInt64(&b.Fail, 1)
+		if *debug {
+			b.LogChan <- fmt.Sprintf("# %s\n", err)
+		}
+		return
 	}
-	wg1.Wait()
+	atomic.AddInt64(&b.Active, 1)
+	scanner := bufio.NewScanner(conn)
+	// Send AGI initialisation data
+	conn.Write(b.Env)
+	if b.Payload == nil {
+		// Reply with '200' to all messages from the AGI server until it hangs up
+		for scanner.Scan() {
+			time.Sleep(b.ReplyDelay)
+			conn.Write([]byte("200 result=0\n"))
+			if scanner.Text() == "HANGUP" {
+				conn.Write([]byte("HANGUP\n"))
+				break
+			}
+		}
+	} else {
+		// Use the AGI Payload from loaded config file
+		for _, pld := range b.Payload {
+			if !scanner.Scan() {
+				break
+			}
+			time.Sleep(time.Duration(pld.Delay) * time.Millisecond)
+			conn.Write([]byte(pld.Msg + "\n"))
+		}
+	}
+	conn.Close()
+	elapsed := time.Since(start)
+	b.TimeChan <- elapsed.Nanoseconds()
+	atomic.AddInt64(&b.Active, -1)
+	atomic.AddInt64(&b.Count, 1)
+	if *debug {
+		b.LogChan <- fmt.Sprintf("%d,%d,%d\n", atomic.LoadInt64(&b.Count),
+			atomic.LoadInt64(&b.Active), elapsed.Nanoseconds())
+	}
 }
 
 // Write to log file
@@ -233,32 +263,6 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 	}
 }
 
-// Initialize benchmark session
-func benchInit() *Bench {
-	var confData Config
-	b := new(Bench)
-	b.LogChan = make(chan string, *sess*2)
-	b.TimeChan = make(chan int64, *sess*2)
-	b.RunDelay = time.Duration(1e9 / *runs) * time.Nanosecond
-	b.ReplyDelay = time.Duration(*delay) * time.Millisecond
-	if *conf != "" {
-		// Parse config file
-		file, err := os.Open(*conf)
-		if err != nil {
-			log.Println("Failed to open config file, using default settings:", err)
-		} else {
-			decoder := json.NewDecoder(file)
-			err = decoder.Decode(&confData)
-			if err != nil {
-				log.Println("Failed to parse config file, using default settings:", err)
-			}
-		}
-	}
-	b.Env = agiInit(confData.AgiEnv)
-	b.Payload = confData.AgiPayload
-	return b
-}
-
 // Generate AGI Environment data
 func agiInit(env []string) []byte {
 	agiData := make([]byte, 0, 512)
@@ -279,7 +283,7 @@ func agiInit(env []string) []byte {
 		agiData = append(agiData, "agi_channel: SIP/1234-00000000\n"...)
 		agiData = append(agiData, "agi_language: en\n"...)
 		agiData = append(agiData, "agi_type: SIP\n"...)
-		agiData = append(agiData, "agi_uniqueid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
+		agiData = append(agiData, "agi_uniqueid: 1410638774.0\n"...)
 		agiData = append(agiData, "agi_version: 10.1.1.0\n"...)
 		agiData = append(agiData, "agi_callerid: "+*cid+"\n"...)
 		agiData = append(agiData, "agi_calleridname: "+*cid+"\n"...)
@@ -294,7 +298,7 @@ func agiInit(env []string) []byte {
 		agiData = append(agiData, "agi_priority: 1\n"...)
 		agiData = append(agiData, "agi_enhanced: 0.0\n"...)
 		agiData = append(agiData, "agi_accountcode: \n"...)
-		agiData = append(agiData, "agi_threadid: "+strconv.Itoa(1e8+rand.Intn(9e8-1))+"\n"...)
+		agiData = append(agiData, "agi_threadid: -1281018784\n"...)
 		if len(*arg) > 0 {
 			agiData = append(agiData, "agi_arg_1: "+*arg+"\n"...)
 		}
