@@ -1,5 +1,5 @@
 /*
-	A FastAGI parallel benchmark in go
+	A FastAGI benchmarking and debugging tool in go
 
 	Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf.000@gmail.com>
 
@@ -43,7 +43,7 @@ var (
 	ext      = flag.String("ext", "100", "Called extension")
 )
 
-// Benchmark session data
+// Bench holds the benchmark session data
 type Bench struct {
 	Count      int64
 	Active     int64
@@ -57,13 +57,13 @@ type Bench struct {
 	Payload    []AgiMsg
 }
 
-// AGI Playload data
+// AgiMsg holds the AGI payload data
 type AgiMsg struct {
 	Msg   string
 	Delay int
 }
 
-// Configuration data
+// Config holds the configuration data
 type Config struct {
 	AgiEnv     []string
 	AgiPayload []AgiMsg

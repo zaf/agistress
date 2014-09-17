@@ -1,7 +1,12 @@
-### A FastAGI parallel benchmark in Go
+### A FastAGI benchmarking and debugging tool
 ---
 
 Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf.000@gmail.com>
+
+'agistress' acts as a FastAGI client that can connect to servers
+using the Asterisk Gateway Interface (AGI).
+It can be used as a test tool and/or a traffic generator for FastAGI
+applications. It can load and use user-defined payloads from config files.
 
 #### Usage flags:
 
