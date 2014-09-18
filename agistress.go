@@ -25,13 +25,19 @@ import (
 	"time"
 )
 
+const (
+	successReply = "200 result=0\n"
+	hangupReply  = "200 result=1\nHANGUP\n"
+	hangup       = "HANGUP"
+)
+
 var (
 	shutdown int32
 	file     *os.File
 	writer   *bufio.Writer
 	conf     = flag.String("conf", "", "Configuration file")
 	single   = flag.Bool("single", false, "Connect and run only once")
-	debug    = flag.Bool("debug", false, "Write detailed statistics output to csv file")
+	debug    = flag.Bool("debug", false, "Write detailed statistics to csv file")
 	host     = flag.String("host", "127.0.0.1", "FAstAGI server host")
 	port     = flag.String("port", "4573", "FastAGI server port")
 	runs     = flag.Float64("runs", 1, "Number of runs per second")
@@ -93,8 +99,8 @@ func main() {
 	wgMain.Add(1)
 	b := benchInit()
 	if *single {
-		// Run once
-		go agiConnection(b, wgMain)
+		// Run once with detailed console output
+		go agiConnection(b, wgMain, true)
 	} else {
 		// Start benchmark and wait for users input to stop
 		go agiBench(b, wgMain)
@@ -144,7 +150,7 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 			for atomic.LoadInt32(&shutdown) == 0 {
 				<-ticker
 				wgConn.Add(1)
-				go agiConnection(b, wgConn)
+				go agiConnection(b, wgConn, false)
 			}
 			wgConn.Wait()
 		}()
@@ -168,7 +174,7 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 }
 
 // Connect to the AGI server and send AGI payload
-func agiConnection(b *Bench, wg *sync.WaitGroup) {
+func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 	defer wg.Done()
 	start := time.Now()
 	conn, err := net.Dial("tcp", net.JoinHostPort(*host, *port))
@@ -177,21 +183,36 @@ func agiConnection(b *Bench, wg *sync.WaitGroup) {
 		if *debug {
 			b.LogChan <- fmt.Sprintf("# %s\n", err)
 		}
+		if consoleDb {
+			log.Println(err)
+		}
 		return
 	}
 	atomic.AddInt64(&b.Active, 1)
 	scanner := bufio.NewScanner(conn)
 	// Send AGI initialisation data
 	conn.Write(b.Env)
+	if consoleDb {
+		fmt.Print("AGI Tx >>\n", string(b.Env))
+	}
 	if b.Payload == nil {
-		// Reply with '200' to all messages from the AGI server until it hangs up
+		// When no payload is defined reply with '200' to all messages from the AGI server until it hangs up
 		for scanner.Scan() {
-			if scanner.Text() == "HANGUP" {
-				conn.Write([]byte("200 result=1\nHANGUP\n"))
+			if consoleDb {
+				fmt.Println("AGI Rx <<\n", scanner.Text())
+			}
+			if scanner.Text() == hangup {
+				conn.Write([]byte(hangupReply))
+				if consoleDb {
+					fmt.Println("AGI Tx >>\n ", hangupReply)
+				}
 				break
 			}
 			time.Sleep(b.ReplyDelay)
-			conn.Write([]byte("200 result=0\n"))
+			conn.Write([]byte(successReply))
+			if consoleDb {
+				fmt.Print("AGI Tx >>\n ", successReply)
+			}
 		}
 	} else {
 		// Use the AGI Payload from loaded config file
@@ -199,12 +220,21 @@ func agiConnection(b *Bench, wg *sync.WaitGroup) {
 			if !scanner.Scan() {
 				break
 			}
-			if scanner.Text() == "HANGUP" {
-				conn.Write([]byte("200 result=1\nHANGUP\n"))
+			if consoleDb {
+				fmt.Println("AGI Rx <<\n", scanner.Text())
+			}
+			if scanner.Text() == hangup {
+				conn.Write([]byte(hangupReply))
+				if consoleDb {
+					fmt.Println("AGI Tx >>\n ", hangupReply)
+				}
 				break
 			}
 			time.Sleep(time.Duration(pld.Delay) * time.Millisecond)
 			conn.Write([]byte(pld.Msg + "\n"))
+			if consoleDb {
+				fmt.Print("AGI Tx >>\n ", pld.Msg+"\n")
+			}
 		}
 	}
 	conn.Close()
@@ -215,6 +245,9 @@ func agiConnection(b *Bench, wg *sync.WaitGroup) {
 	if *debug {
 		b.LogChan <- fmt.Sprintf("%d,%d,%d\n", atomic.LoadInt64(&b.Count),
 			atomic.LoadInt64(&b.Active), elapsed.Nanoseconds())
+	}
+	if consoleDb {
+		fmt.Printf("\nCompleted in %d ns\n", elapsed.Nanoseconds())
 	}
 }
 
