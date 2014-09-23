@@ -33,8 +33,6 @@ const (
 
 var (
 	shutdown int32
-	file     *os.File
-	writer   *bufio.Writer
 	conf     = flag.String("conf", "", "Configuration file")
 	single   = flag.Bool("single", false, "Connect and run only once")
 	debug    = flag.Bool("debug", false, "Write detailed statistics to csv file")
@@ -56,6 +54,7 @@ type Bench struct {
 	Fail       int64
 	AvrDur     int64
 	LogChan    chan string
+	Logger     *bufio.Writer
 	TimeChan   chan int64
 	RunDelay   time.Duration
 	ReplyDelay time.Duration
@@ -78,26 +77,26 @@ type Config struct {
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
+	wgMain := new(sync.WaitGroup)
+	wgMain.Add(1)
+	b := benchInit()
 	if *debug {
 		// Open log file for writing
 		file, err := os.Create("bench-" + strconv.FormatInt(time.Now().Unix(), 10) + ".csv")
 		if err != nil {
 			log.Fatalln("Failed to create file:", err)
 		}
-		writer = bufio.NewWriter(file)
+		b.Logger = bufio.NewWriter(file)
 		defer func() {
-			writer.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
-			writer.Flush()
+			b.Logger.WriteString("#Stopped benchmark at: " + time.Now().String() + "\n")
+			b.Logger.Flush()
 			file.Close()
 		}()
-		writer.WriteString("#Started benchmark at: " + time.Now().String() + "\n")
-		writer.WriteString(fmt.Sprintf("#Host: %v\n#Port: %v\n#Runs: %v\n", *host, *port, *runs))
-		writer.WriteString(fmt.Sprintf("#Sessions: %v\n#Delay: %v\n#Reguest: %v\n", *sess, *delay, *req))
-		writer.WriteString("#completed,active,duration\n")
+		b.Logger.WriteString("#Started benchmark at: " + time.Now().String() + "\n")
+		b.Logger.WriteString(fmt.Sprintf("#Host: %v\n#Port: %v\n#Runs: %v\n", *host, *port, *runs))
+		b.Logger.WriteString(fmt.Sprintf("#Sessions: %v\n#Delay: %v\n#Reguest: %v\n", *sess, *delay, *req))
+		b.Logger.WriteString("#completed,active,duration\n")
 	}
-	wgMain := new(sync.WaitGroup)
-	wgMain.Add(1)
-	b := benchInit()
 	if *single {
 		// Run once with detailed console output
 		go agiConnection(b, wgMain, true)
@@ -255,7 +254,7 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 func logger(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for logMsg := range b.LogChan {
-		writer.WriteString(logMsg)
+		b.Logger.WriteString(logMsg)
 	}
 }
 
