@@ -32,19 +32,18 @@ const (
 )
 
 var (
-	shutdown int32
-	conf     = flag.String("conf", "", "Configuration file")
-	single   = flag.Bool("single", false, "Connect and run only once")
-	debug    = flag.Bool("debug", false, "Write detailed statistics to csv file")
-	host     = flag.String("host", "127.0.0.1", "FAstAGI server host")
-	port     = flag.String("port", "4573", "FastAGI server port")
-	runs     = flag.Float64("runs", 1, "Number of runs per second")
-	sess     = flag.Int("sess", 1, "Sessions per run")
-	delay    = flag.Int("delay", 50, "Delay in AGI responses to the server (milliseconds)")
-	req      = flag.String("req", "myagi?file=echo-test", "AGI request")
-	arg      = flag.String("arg", "", "Argument to pass to the FastAGI server")
-	cid      = flag.String("cid", "Unknown", "Caller ID")
-	ext      = flag.String("ext", "100", "Called extension")
+	conf   = flag.String("conf", "", "Configuration file")
+	single = flag.Bool("single", false, "Connect and run only once")
+	debug  = flag.Bool("debug", false, "Write detailed statistics to csv file")
+	host   = flag.String("host", "127.0.0.1", "FAstAGI server host")
+	port   = flag.String("port", "4573", "FastAGI server port")
+	runs   = flag.Float64("runs", 1, "Number of runs per second")
+	sess   = flag.Int("sess", 1, "Sessions per run")
+	delay  = flag.Int("delay", 50, "Delay in AGI responses to the server (milliseconds)")
+	req    = flag.String("req", "myagi?file=echo-test", "AGI request")
+	arg    = flag.String("arg", "", "Argument to pass to the FastAGI server")
+	cid    = flag.String("cid", "Unknown", "Caller ID")
+	ext    = flag.String("ext", "100", "Called extension")
 )
 
 // Bench holds the benchmark session data
@@ -58,6 +57,7 @@ type Bench struct {
 	TimeChan   chan int64
 	RunDelay   time.Duration
 	ReplyDelay time.Duration
+	Shutdown   int32
 	Env        []byte
 	Payload    []AgiMsg
 }
@@ -104,7 +104,7 @@ func main() {
 		// Start benchmark and wait for users input to stop
 		go agiBench(b, wgMain)
 		bufio.NewReader(os.Stdin).ReadString('\n')
-		atomic.StoreInt32(&shutdown, 1)
+		atomic.StoreInt32(&b.Shutdown, 1)
 	}
 	wgMain.Wait()
 }
@@ -146,7 +146,7 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 		go func() {
 			defer wgBench.Done()
 			wgConn := new(sync.WaitGroup)
-			for atomic.LoadInt32(&shutdown) == 0 {
+			for atomic.LoadInt32(&b.Shutdown) == 0 {
 				<-ticker
 				wgConn.Add(1)
 				go agiConnection(b, wgConn, false)
@@ -258,7 +258,7 @@ func logger(b *Bench, wg *sync.WaitGroup) {
 	}
 }
 
-// Calculate Average session duration for the last 1000 sessions
+// Calculate Average session duration for the last 10000 sessions
 func calcAvrg(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var sessions int64
@@ -276,16 +276,18 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		fmt.Print("\033[2J\033[H") //Clear screen
-		fmt.Println("Running paraller AGI bench to:", net.JoinHostPort(*host, *port),
+		fmt.Println("Running FastAGI bench against:", net.JoinHostPort(*host, *port),
 			"\nPress Enter to stop.\n",
 			"\nA new run each:", b.RunDelay,
-			"\nSessions per run:", *sess,
-			"\nReply delay:", b.ReplyDelay,
-			"\n\nFastAGI Sessions\nActive:", atomic.LoadInt64(&b.Active),
+			"\nSessions per run:", *sess)
+		if b.Payload == nil {
+			fmt.Println("Reply delay:", b.ReplyDelay)
+		}
+		fmt.Println("\n\nFastAGI Sessions\nActive:", atomic.LoadInt64(&b.Active),
 			"\nCompleted:", atomic.LoadInt64(&b.Count),
 			"\nDuration:", atomic.LoadInt64(&b.AvrDur), "ns (last 10000 sessions average)",
 			"\nFailed:", atomic.LoadInt64(&b.Fail))
-		if atomic.LoadInt32(&shutdown) != 0 {
+		if atomic.LoadInt32(&b.Shutdown) != 0 {
 			fmt.Println("Stopping...")
 			if atomic.LoadInt64(&b.Active) == 0 {
 				break
