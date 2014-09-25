@@ -46,32 +46,32 @@ var (
 	ext    = flag.String("ext", "100", "Called extension")
 )
 
-// Bench holds the benchmark session data
-type Bench struct {
-	Count      int64
-	Active     int64
-	Fail       int64
-	AvrDur     int64
-	LogChan    chan string
-	Logger     *bufio.Writer
-	TimeChan   chan int64
-	RunDelay   time.Duration
-	ReplyDelay time.Duration
-	Shutdown   int32
-	Env        []byte
-	Payload    []AgiMsg
-}
-
 // AgiMsg holds the AGI payload data
 type AgiMsg struct {
-	Msg   string
-	Delay int
+	Msg   string // AGI response
+	Delay int    // Delay before sending the response
 }
 
 // Config holds the configuration data
 type Config struct {
-	AgiEnv     []string
-	AgiPayload []AgiMsg
+	AgiEnv     []string // AGI environment data
+	AgiPayload []AgiMsg // AGI payload
+}
+
+// Bench holds the benchmark session data
+type Bench struct {
+	AvrDur     int64         // Average duration for each session
+	Active     int32         // Number of active sessions
+	Count      uint32        // Sessions count
+	Fail       uint32        // Failed sessions count
+	LogChan    chan string   // Channel for sending logging data
+	Logger     *bufio.Writer // Log file writer
+	TimeChan   chan int64    // Channel used for synchronization
+	RunDelay   time.Duration // Session start delay
+	ReplyDelay time.Duration // AGI response delay
+	Shutdown   uint32        // Stop switch
+	Env        []byte        // AGI environment data
+	Payload    []AgiMsg      // AGI payload data
 }
 
 func main() {
@@ -104,7 +104,7 @@ func main() {
 		// Start benchmark and wait for users input to stop
 		go agiBench(b, wgMain)
 		bufio.NewReader(os.Stdin).ReadString('\n')
-		atomic.StoreInt32(&b.Shutdown, 1)
+		atomic.StoreUint32(&b.Shutdown, 1)
 	}
 	wgMain.Wait()
 }
@@ -146,7 +146,7 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 		go func() {
 			defer wgBench.Done()
 			wgConn := new(sync.WaitGroup)
-			for atomic.LoadInt32(&b.Shutdown) == 0 {
+			for atomic.LoadUint32(&b.Shutdown) == 0 {
 				<-ticker
 				wgConn.Add(1)
 				go agiConnection(b, wgConn, false)
@@ -178,7 +178,7 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 	start := time.Now()
 	conn, err := net.Dial("tcp", net.JoinHostPort(*host, *port))
 	if err != nil {
-		atomic.AddInt64(&b.Fail, 1)
+		atomic.AddUint32(&b.Fail, 1)
 		if *debug {
 			b.LogChan <- fmt.Sprintf("# %s\n", err)
 		}
@@ -187,7 +187,7 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 		}
 		return
 	}
-	atomic.AddInt64(&b.Active, 1)
+	atomic.AddInt32(&b.Active, 1)
 	scanner := bufio.NewScanner(conn)
 	// Send AGI initialisation data
 	conn.Write(b.Env)
@@ -239,11 +239,11 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 	conn.Close()
 	elapsed := time.Since(start)
 	b.TimeChan <- elapsed.Nanoseconds()
-	atomic.AddInt64(&b.Active, -1)
-	atomic.AddInt64(&b.Count, 1)
+	atomic.AddInt32(&b.Active, -1)
+	atomic.AddUint32(&b.Count, 1)
 	if *debug {
-		b.LogChan <- fmt.Sprintf("%d,%d,%d\n", atomic.LoadInt64(&b.Count),
-			atomic.LoadInt64(&b.Active), elapsed.Nanoseconds())
+		b.LogChan <- fmt.Sprintf("%d,%d,%d\n", atomic.LoadUint32(&b.Count),
+			atomic.LoadInt32(&b.Active), elapsed.Nanoseconds())
 	}
 	if consoleDb {
 		fmt.Printf("\nCompleted in %d ns\n", elapsed.Nanoseconds())
@@ -283,13 +283,13 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 		if b.Payload == nil {
 			fmt.Println("Reply delay:", b.ReplyDelay)
 		}
-		fmt.Println("\n\nFastAGI Sessions\nActive:", atomic.LoadInt64(&b.Active),
-			"\nCompleted:", atomic.LoadInt64(&b.Count),
+		fmt.Println("\n\nFastAGI Sessions\nActive:", atomic.LoadInt32(&b.Active),
+			"\nCompleted:", atomic.LoadUint32(&b.Count),
 			"\nDuration:", atomic.LoadInt64(&b.AvrDur), "ns (last 10000 sessions average)",
-			"\nFailed:", atomic.LoadInt64(&b.Fail))
-		if atomic.LoadInt32(&b.Shutdown) != 0 {
+			"\nFailed:", atomic.LoadUint32(&b.Fail))
+		if atomic.LoadUint32(&b.Shutdown) != 0 {
 			fmt.Println("Stopping...")
-			if atomic.LoadInt64(&b.Active) == 0 {
+			if atomic.LoadInt32(&b.Active) <= 0 {
 				break
 			}
 		}
