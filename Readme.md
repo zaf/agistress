@@ -8,6 +8,9 @@ using the Asterisk Gateway Interface (AGI).
 It can be used as a test tool and/or a traffic generator for FastAGI
 applications. It can load and use user-defined payloads from config files.
 
+#### Usage:
+agistress [ Flags ] [ AGI arguments ]
+
 #### Usage flags:
 
 - conf   : Configuration file with the AGI playload in JSON format
@@ -17,7 +20,6 @@ applications. It can load and use user-defined payloads from config files.
 - host   : FAstAGI server host. Default: 127.0.0.1
 - port   : FastAGI server port. Default: 4573
 - req    : AGI request. Default: "myagi?file=echo-test"
-- arg    : Argument to pass to the FastAGI server.
 - cid    : Caller ID. Default: "Unknown"
 - debug  : Write detailed statistics output to csv file. Default: false
 - delay  : Delay in AGI responses to the server (milliseconds). Default: 50

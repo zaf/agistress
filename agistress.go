@@ -41,7 +41,6 @@ var (
 	sess   = flag.Int("sess", 1, "Sessions per run")
 	delay  = flag.Int("delay", 50, "Delay in AGI responses to the server (milliseconds)")
 	req    = flag.String("req", "myagi?file=echo-test", "AGI request")
-	arg    = flag.String("arg", "", "Argument to pass to the FastAGI server")
 	cid    = flag.String("cid", "Unknown", "Caller ID")
 	ext    = flag.String("ext", "100", "Called extension")
 )
@@ -300,6 +299,7 @@ func consoleOutput(b *Bench, wg *sync.WaitGroup) {
 // Generate AGI Environment data
 func agiInit(env []string) []byte {
 	var envData string
+	var i int
 	if env != nil {
 		// Env from config file
 		for _, par := range env {
@@ -333,8 +333,9 @@ func agiInit(env []string) []byte {
 		envData += fmt.Sprintln("agi_enhanced: 0.0")
 		envData += fmt.Sprintln("agi_accountcode: ")
 		envData += fmt.Sprintln("agi_threadid: -1281018784")
-		if len(*arg) > 0 {
-			envData += fmt.Sprintln("agi_arg_1: " + *arg)
+		for _, arg := range flag.Args() {
+			i++
+			envData += fmt.Sprintf("agi_arg_%d: %s\n", i, arg)
 		}
 	}
 	return []byte(envData + "\n")
