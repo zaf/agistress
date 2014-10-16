@@ -40,7 +40,6 @@ foreach my $file (@file_list) {
 	print "\nResults for $file:\n";
 	if (!$runs) {
 		print "No data found.\n";
-		next;
 	} else {
 		print "Average values after $runs runs:\n";
 		print "Active Sessions (avr/min/max):  " . int($active/$runs) . " / ", $min_a . " / ", $max_a . "\n";
