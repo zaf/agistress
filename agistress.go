@@ -47,14 +47,14 @@ var (
 
 // AgiMsg holds the AGI payload data
 type AgiMsg struct {
-	Msg   string // AGI response
-	Delay int    // Delay before sending the response
+	Msg   string `json:"msg"`   // AGI response
+	Delay int    `json:"delay"` // Delay before sending the response
 }
 
 // Config holds the configuration data
 type Config struct {
-	AgiEnv     []string // AGI environment data
-	AgiPayload []AgiMsg // AGI payload
+	AgiEnv     []string `json:"env"`     // AGI environment data
+	AgiPayload []AgiMsg `json:"payload"` // AGI payload
 }
 
 // Bench holds the benchmark session data
