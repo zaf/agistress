@@ -12,6 +12,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -43,6 +44,7 @@ var (
 	req    = flag.String("req", "myagi?file=echo-test", "AGI request")
 	cid    = flag.String("cid", "Unknown", "Caller ID")
 	ext    = flag.String("ext", "100", "Called extension")
+	agiTLS = flag.Bool("tls", false, "Enable TLS encryption")
 )
 
 // AgiMsg holds the AGI payload data
@@ -175,7 +177,14 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 	defer wg.Done()
 	start := time.Now()
-	conn, err := net.Dial("tcp", net.JoinHostPort(*host, *port))
+	var err error
+	var conn net.Conn
+	if *agiTLS {
+		tslConf := tls.Config{InsecureSkipVerify: true}
+		conn, err = tls.Dial("tcp", net.JoinHostPort(*host, *port), &tslConf)
+	} else {
+		conn, err = net.Dial("tcp", net.JoinHostPort(*host, *port))
+	}
 	if err != nil {
 		atomic.AddUint32(&b.Fail, 1)
 		if *debug {
