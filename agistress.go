@@ -95,7 +95,7 @@ func main() {
 		}()
 		b.Logger.WriteString("#Started benchmark at: " + time.Now().String() + "\n")
 		b.Logger.WriteString(fmt.Sprintf("#Host: %v\n#Port: %v\n#Runs: %v\n", *host, *port, *runs))
-		b.Logger.WriteString(fmt.Sprintf("#Sessions: %v\n#Delay: %v\n#Reguest: %v\n", *sess, *delay, *req))
+		b.Logger.WriteString(fmt.Sprintf("#Sessions: %v\n#Delay: %v\n#Request: %v\n", *sess, *delay, *req))
 		b.Logger.WriteString("#completed,active,duration\n")
 	}
 	if *single {
@@ -141,7 +141,7 @@ func agiBench(b *Bench, wg *sync.WaitGroup) {
 	defer wg.Done()
 	wgBench := new(sync.WaitGroup)
 	wgBench.Add(*sess)
-	// Spawn pool of paraller runs
+	// Spawn pool of parallel runs
 	for i := 0; i < *sess; i++ {
 		ticker := time.Tick(b.RunDelay)
 		go func() {
@@ -197,7 +197,7 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 	}
 	atomic.AddInt32(&b.Active, 1)
 	scanner := bufio.NewScanner(conn)
-	// Send AGI initialisation data
+	// Send AGI initialization data
 	conn.Write(b.Env)
 	if consoleDb {
 		fmt.Print("AGI Tx >>\n", string(b.Env))
