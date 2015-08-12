@@ -30,6 +30,7 @@ const (
 	successReply = "200 result=0\n"
 	hangupReply  = "200 result=1\nHANGUP\n"
 	hangup       = "HANGUP"
+	failure      = "FAILURE"
 )
 
 var (
@@ -208,6 +209,12 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 			if consoleDb {
 				fmt.Println("AGI Rx <<\n", scanner.Text())
 			}
+			if scanner.Text() == failure {
+				conn.Close()
+				atomic.AddUint32(&b.Fail, 1)
+				atomic.AddInt32(&b.Active, -1)
+				return
+			}
 			if scanner.Text() == hangup {
 				conn.Write([]byte(hangupReply))
 				if consoleDb {
@@ -229,6 +236,12 @@ func agiConnection(b *Bench, wg *sync.WaitGroup, consoleDb bool) {
 			}
 			if consoleDb {
 				fmt.Println("AGI Rx <<\n", scanner.Text())
+			}
+			if scanner.Text() == failure {
+				conn.Close()
+				atomic.AddUint32(&b.Fail, 1)
+				atomic.AddInt32(&b.Active, -1)
+				return
 			}
 			if scanner.Text() == hangup {
 				conn.Write([]byte(hangupReply))
