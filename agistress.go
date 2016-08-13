@@ -1,7 +1,7 @@
 /*
 	A FastAGI benchmarking and debugging tool in go
 
-	Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf.000@gmail.com>
+	Copyright (C) 2013 - 2014, Lefteris Zafiris <zaf@fastmail.com>
 
 	This program is free software, distributed under the terms of
 	the GNU General Public License Version 3. See the LICENSE file
@@ -66,12 +66,12 @@ type Bench struct {
 	Active     int32         // Number of active sessions
 	Count      uint32        // Sessions count
 	Fail       uint32        // Failed sessions count
+	Shutdown   uint32        // Stop switch
 	LogChan    chan string   // Channel for sending logging data
-	Logger     *bufio.Writer // Log file writer
 	TimeChan   chan int64    // Channel used for synchronization
 	RunDelay   time.Duration // Session start delay
 	ReplyDelay time.Duration // AGI response delay
-	Shutdown   uint32        // Stop switch
+	Logger     *bufio.Writer // Log file writer
 	Env        []byte        // AGI environment data
 	Payload    []AgiMsg      // AGI payload data
 }
